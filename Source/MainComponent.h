@@ -6,6 +6,7 @@
 #include "UI/SetlistComponent.h"
 #include "UI/TimelineComponent.h"
 #include "UI/InspectorComponent.h"
+#include "UI/ShowPageComponent.h"
 
 // Root layout + global key handler (Studio One shortcut map).
 //
@@ -48,6 +49,11 @@ private:
     SetlistComponent   setlist    { playbackEngine };
     TimelineComponent  timeline   { playbackEngine };
     InspectorComponent inspector  { playbackEngine };
+
+    // Show Page (F2 to toggle fullscreen live-performance view).
+    ShowPageComponent  showPage    { playbackEngine };
+    bool               showPageVisible = false;
+    void               toggleShowPage();
 
     static constexpr int headerH    = 64;
     static constexpr int sidebarW   = 220;

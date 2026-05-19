@@ -35,6 +35,7 @@ target_sources(PerformanceDAW PRIVATE
     Source/UI/SetlistComponent.cpp
     Source/UI/TimelineComponent.cpp
     Source/UI/InspectorComponent.cpp
+    Source/UI/ShowPageComponent.cpp
 )
 
 

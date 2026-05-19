@@ -12,6 +12,8 @@ MainComponent::MainComponent (te::Engine& /*engineRef*/)
     addAndMakeVisible (timeline);
     addAndMakeVisible (inspector);
 
+    addChildComponent (showPage);   // hidden until F2
+
     setSize (1440, 900);
 
     // Key listener is registered on the DocumentWindow in Main.cpp so
@@ -29,11 +31,26 @@ void MainComponent::paint (juce::Graphics& g)
 
 void MainComponent::resized()
 {
+    // Show Page covers the full window when visible.
+    showPage.setBounds (getLocalBounds());
+
     auto area = getLocalBounds();
     transport.setBounds (area.removeFromTop  (headerH));
     setlist.setBounds   (area.removeFromLeft (sidebarW));
     inspector.setBounds (area.removeFromRight (inspectorW));
     timeline.setBounds  (area);
+}
+
+void MainComponent::toggleShowPage()
+{
+    showPageVisible = ! showPageVisible;
+    showPage.setVisible (showPageVisible);
+
+    // When Show Page is up, hide the normal edit UI so they don't paint behind it.
+    transport.setVisible (! showPageVisible);
+    setlist  .setVisible (! showPageVisible);
+    timeline .setVisible (! showPageVisible);
+    inspector.setVisible (! showPageVisible);
 }
 
 // ── Keyboard shortcuts (Studio One layout) ────────────────────────────────────
@@ -48,6 +65,19 @@ bool MainComponent::keyPressed (const juce::KeyPress& k, juce::Component*)
     const auto cmd   = k.getModifiers().isCommandDown();
     const auto shift = k.getModifiers().isShiftDown();
     const int  code  = k.getKeyCode();
+
+    // ── Show Page toggle (F2 / Escape) ────────────────────────────────────
+    if (code == juce::KeyPress::F2Key)
+    {
+        toggleShowPage();
+        return true;
+    }
+
+    if (code == juce::KeyPress::escapeKey && showPageVisible)
+    {
+        toggleShowPage();
+        return true;
+    }
 
     // ── Transport ──────────────────────────────────────────────────────────
     if (code == juce::KeyPress::spaceKey)
@@ -264,7 +294,10 @@ bool MainComponent::keyPressed (const juce::KeyPress& k, juce::Component*)
             "\n"
             "SETLIST\n"
             "  Click          Switch to song\n"
-            "  Double-click   Rename song";
+            "  Double-click   Rename song\n"
+            "\n"
+            "SHOW PAGE\n"
+            "  F2 / Escape    Toggle full-screen performance view";
 
         juce::AlertWindow::showMessageBoxAsync (
             juce::MessageBoxIconType::InfoIcon,
