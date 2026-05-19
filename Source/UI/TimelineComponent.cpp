@@ -89,9 +89,29 @@ void TimelineComponent::setPixelsPerSecond (double pps)
     repaint();
 }
 
+int TimelineComponent::getTrackY (int idx) const
+{
+    int y = rulerH;
+    for (int i = 0; i < idx && i < (int) trackHeights.size(); ++i)
+        y += trackHeights[(size_t) i];
+    return y;
+}
+
+int TimelineComponent::getTrackH (int idx) const
+{
+    if (idx < 0 || idx >= (int) trackHeights.size()) return defaultTrackH;
+    return trackHeights[(size_t) idx];
+}
+
 int TimelineComponent::trackIndexAtY (int y) const
 {
-    return (y - rulerH) / trackH;
+    int trackY = rulerH;
+    for (int i = 0; i < (int) trackHeights.size(); ++i)
+    {
+        if (y < trackY + trackHeights[(size_t) i]) return i;
+        trackY += trackHeights[(size_t) i];
+    }
+    return static_cast<int> (trackHeights.size());  // below all tracks
 }
 
 te::ClipTrack* TimelineComponent::clipTrackAtY (int y) const
@@ -133,22 +153,25 @@ void TimelineComponent::paint (juce::Graphics& g)
         return;
     }
 
-    int trackY = rulerH;
     int audioTrackCount = 0;
 
     edit->getTrackList().visitAllTopLevel ([&] (te::Track& track) -> bool
     {
         if (! track.isAudioTrack()) return true;
+
+        const int tIdx   = audioTrackCount;
+        const int tY     = getTrackY (tIdx);
+        const int tH     = getTrackH (tIdx);
         ++audioTrackCount;
 
         auto* clipTrack  = dynamic_cast<te::ClipTrack*> (&track);
         const bool isSel = (&track == engine.getSelectedTrack());
 
-        const auto headerBounds = juce::Rectangle<int> (0, trackY, trackHeaderW, trackH);
-        const auto clipArea     = juce::Rectangle<int> (trackHeaderW, trackY,
-                                                         getWidth() - trackHeaderW, trackH);
+        const auto headerBounds = juce::Rectangle<int> (0, tY, trackHeaderW, tH);
+        const auto clipArea     = juce::Rectangle<int> (trackHeaderW, tY,
+                                                         getWidth() - trackHeaderW, tH);
 
-        paintTrackHeader (g, &track, headerBounds, isSel, audioTrackCount - 1);
+        paintTrackHeader (g, &track, headerBounds, isSel, tIdx);
 
         g.setColour (juce::Colour (isSel ? 0xff1e1e2e
                                          : (audioTrackCount % 2 == 0 ? 0xff1a1a1a : 0xff1e1e1e)));
@@ -160,7 +183,6 @@ void TimelineComponent::paint (juce::Graphics& g)
         {
             const int numClips = clipTrack->getNumTrackItems();
 
-            // Empty-track hint
             if (numClips == 0)
             {
                 g.setColour (juce::Colour (0xff3a3a3a));
@@ -181,21 +203,23 @@ void TimelineComponent::paint (juce::Graphics& g)
 
                 if (clipX + clipW < trackHeaderW || clipX > getWidth()) continue;
 
-                const auto clipRect = juce::Rectangle<float> (clipX, (float) trackY + 2.f,
-                                                               clipW, (float) trackH - 4.f)
+                const auto clipRect = juce::Rectangle<float> (clipX, (float) tY + 2.f,
+                                                               clipW, (float) tH - 4.f)
                                           .toNearestInt();
 
                 if (dynamic_cast<te::MidiClip*> (clip))
-                    paintMidiClip  (g, clip, clipRect, audioTrackCount - 1);
+                    paintMidiClip  (g, clip, clipRect, tIdx);
                 else
-                    paintAudioClip (g, clip, clipRect, audioTrackCount - 1);
+                    paintAudioClip (g, clip, clipRect, tIdx);
             }
         }
 
+        // Track resize handle (bottom 4px of header, full-width line)
         g.setColour (isSel ? juce::Colour (0xff3a3a6a) : juce::Colour (0xff303030));
-        g.drawHorizontalLine (trackY + trackH - 1, 0.f, (float) getWidth());
+        g.drawHorizontalLine (tY + tH - 1, 0.f, (float) getWidth());
+        g.setColour (juce::Colour (0xff404040));
+        g.fillRect (0, tY + tH - 3, trackHeaderW, 3);
 
-        const_cast<int&> (trackY) += trackH;
         return true;
     });
 
@@ -339,10 +363,43 @@ void TimelineComponent::paintRuler (juce::Graphics& g, juce::Rectangle<int> area
         }
     }
 
+    paintMarkers (g, area);
+
     g.setColour (juce::Colour (0xff202020));
     g.fillRect  (0, area.getY(), trackHeaderW, area.getHeight());
     g.setColour (juce::Colour (0xff303030));
     g.drawVerticalLine (trackHeaderW, (float) area.getY(), (float) area.getBottom());
+}
+
+// ── Markers ───────────────────────────────────────────────────────────────────
+
+void TimelineComponent::paintMarkers (juce::Graphics& g, juce::Rectangle<int> rulerArea)
+{
+    const auto& markers = engine.getMarkers();
+    if (markers.empty()) return;
+
+    for (int i = 0; i < (int) markers.size(); ++i)
+    {
+        const float mx = secondsToX (markers[(size_t) i].positionSeconds);
+        if (mx < (float) trackHeaderW || mx > (float) getWidth()) continue;
+
+        // Marker line extends from ruler through all tracks.
+        g.setColour (juce::Colour (0xffffd54f).withAlpha (0.9f));
+        g.drawVerticalLine ((int) mx, (float) rulerArea.getY(), (float) getHeight());
+
+        // Triangle flag at top.
+        const float flagTop = (float) rulerArea.getY();
+        juce::Path flag;
+        flag.addTriangle (mx, flagTop, mx + 8.f, flagTop, mx, flagTop + 8.f);
+        g.fillPath (flag);
+
+        // Label inside the flag area.
+        g.setColour (juce::Colours::black);
+        g.setFont (9.f);
+        g.drawText (markers[(size_t) i].name,
+                    (int) mx + 2, (int) flagTop, 80, 10,
+                    juce::Justification::centredLeft);
+    }
 }
 
 // ── Track header ──────────────────────────────────────────────────────────────
@@ -404,6 +461,24 @@ void TimelineComponent::paintAudioClip (juce::Graphics& g, te::Clip* clip, juce:
 
     g.setColour (isSel ? juce::Colours::yellow : trackColourBright (trackIdx));
     g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 3.f, isSel ? 2.f : 1.f);
+
+    // Gain handle strip at top of clip.
+    if (auto* acb = dynamic_cast<te::AudioClipBase*> (clip))
+    {
+        const float db       = acb->getGainDB();
+        const float normGain = juce::jlimit (0.f, 1.f, (db + 60.f) / 72.f);  // -60..+12 dB
+        const int   barW     = static_cast<int> (normGain * (float) b.getWidth());
+        const auto  gainBar  = juce::Rectangle<int> (b.getX(), b.getY(), barW, 6);
+        g.setColour (juce::Colour (0x88ffffff));
+        g.fillRect  (gainBar);
+        if (std::abs (db) > 0.5f)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.7f));
+            g.setFont (9.f);
+            g.drawText (juce::String (db, 1) + " dB",
+                        b.getX() + 2, b.getY(), 48, 8, juce::Justification::centredLeft);
+        }
+    }
 
     g.setColour (juce::Colours::white);
     g.setFont (11.f);
@@ -470,9 +545,10 @@ void TimelineComponent::paintDropTarget (juce::Graphics& g)
 
     if (dragOverTrackIdx >= 0)
     {
-        const int y = rulerH + dragOverTrackIdx * trackH;
+        const int y = getTrackY (dragOverTrackIdx);
+        const int h = getTrackH (dragOverTrackIdx);
         g.setColour (juce::Colours::yellow.withAlpha (0.12f));
-        g.fillRect (trackHeaderW, y, getWidth() - trackHeaderW, trackH);
+        g.fillRect (trackHeaderW, y, getWidth() - trackHeaderW, h);
     }
 }
 
@@ -615,6 +691,41 @@ te::Clip* TimelineComponent::clipAtPoint (int x, int y) const
 
 void TimelineComponent::mouseDown (const juce::MouseEvent& e)
 {
+    // Ruler right-click → marker context menu
+    if (e.y < rulerH && e.x > trackHeaderW && e.mods.isRightButtonDown())
+    {
+        const double clickSec = xToSeconds ((float) e.x);
+        const auto& markers   = engine.getMarkers();
+        constexpr double hitRadius = 0.5;   // seconds
+        int hitIdx = -1;
+        for (int i = 0; i < (int) markers.size(); ++i)
+            if (std::abs (markers[(size_t) i].positionSeconds - clickSec) < hitRadius)
+                { hitIdx = i; break; }
+
+        if (hitIdx >= 0)
+        {
+            juce::PopupMenu m;
+            m.addItem (1, "Rename Marker");
+            m.addItem (2, "Delete Marker");
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                [this, hitIdx] (int r)
+                {
+                    if (r == 2)
+                    {
+                        engine.removeMarker (hitIdx);
+                    }
+                    else if (r == 1)
+                    {
+                        // Rename: cycle through a simple generated name for now.
+                        const auto& ms = engine.getMarkers();
+                        if (hitIdx < (int) ms.size())
+                            engine.renameMarker (hitIdx, ms[(size_t) hitIdx].name + "+");
+                    }
+                });
+        }
+        return;
+    }
+
     // Ruler click → set playhead
     if (e.y < rulerH && e.x > trackHeaderW)
     {
@@ -626,6 +737,19 @@ void TimelineComponent::mouseDown (const juce::MouseEvent& e)
     // Track header click → select track, deselect clip
     if (e.x < trackHeaderW && e.y >= rulerH)
     {
+        // Detect resize handle: bottom 3px of any track header.
+        for (int i = 0; i < (int) trackHeights.size(); ++i)
+        {
+            const int bottom = getTrackY (i) + getTrackH (i);
+            if (std::abs (e.y - bottom) <= 4)
+            {
+                resizingTrackIdx = i;
+                resizeDragStartY = e.y;
+                resizeDragStartH = getTrackH (i);
+                return;
+            }
+        }
+
         engine.selectClip (nullptr);
         auto* track = clipTrackAtY (e.y);
         engine.selectTrack (track);
@@ -633,8 +757,8 @@ void TimelineComponent::mouseDown (const juce::MouseEvent& e)
         // Right-click on header → rename
         if (e.mods.isRightButtonDown() && track != nullptr)
         {
-            const int ty = rulerH + trackIndexAtY (e.y) * trackH;
-            startTrackRename (track, ty);
+            const int tIdx = trackIndexAtY (e.y);
+            startTrackRename (track, getTrackY (tIdx));
         }
 
         repaint();
@@ -665,11 +789,22 @@ void TimelineComponent::mouseDown (const juce::MouseEvent& e)
 
         if (clip != nullptr)
         {
-            const float clipStartX = secondsToX (clip->getPosition().getStart().inSeconds());
-            const float clipEndX   = secondsToX (clip->getPosition().getEnd().inSeconds());
-            constexpr float edgeZone = 8.f;
+            const int    tIdx      = trackIndexAtY (e.y);
+            const int    tY        = getTrackY (tIdx);
+            const float  clipStartX = secondsToX (clip->getPosition().getStart().inSeconds());
+            const float  clipEndX   = secondsToX (clip->getPosition().getEnd().inSeconds());
+            constexpr float edgeZone    = 8.f;
+            constexpr int   gainZoneH   = 10;   // top pixels of clip = gain drag area
 
-            if ((float) e.x - clipStartX < edgeZone)
+            if (e.y < tY + 2 + gainZoneH
+                && dynamic_cast<te::AudioClipBase*> (clip) != nullptr)
+            {
+                // Gain handle
+                clipDragMode     = DragMode::GainHandle;
+                gainDragStartDb  = dynamic_cast<te::AudioClipBase*> (clip)->getGainDB();
+                gainDragStartY   = e.y;
+            }
+            else if ((float) e.x - clipStartX < edgeZone)
                 clipDragMode = DragMode::ResizeLeft;
             else if (clipEndX - (float) e.x < edgeZone)
                 clipDragMode = DragMode::ResizeRight;
@@ -689,7 +824,30 @@ void TimelineComponent::mouseDown (const juce::MouseEvent& e)
 
 void TimelineComponent::mouseDrag (const juce::MouseEvent& e)
 {
+    // Track height resize
+    if (resizingTrackIdx >= 0)
+    {
+        const int newH = juce::jmax (minTrackH, resizeDragStartH + (e.y - resizeDragStartY));
+        trackHeights[(size_t) resizingTrackIdx] = newH;
+        layoutTrackControls();
+        repaint();
+        return;
+    }
+
     if (dragClip == nullptr || clipDragMode == DragMode::None) return;
+
+    // Clip gain handle
+    if (clipDragMode == DragMode::GainHandle)
+    {
+        if (auto* acb = dynamic_cast<te::AudioClipBase*> (dragClip))
+        {
+            const float newDb = juce::jlimit (-60.f, 12.f,
+                gainDragStartDb + (float) (gainDragStartY - e.y) * 0.3f);
+            acb->setGainDB (newDb);
+            repaint();
+        }
+        return;
+    }
 
     const bool   shiftHeld = e.mods.isShiftDown();
     const double curSec    = xToSeconds ((float) e.x);
@@ -726,8 +884,9 @@ void TimelineComponent::mouseDrag (const juce::MouseEvent& e)
 
 void TimelineComponent::mouseUp (const juce::MouseEvent&)
 {
-    clipDragMode = DragMode::None;
-    dragClip     = nullptr;
+    clipDragMode     = DragMode::None;
+    dragClip         = nullptr;
+    resizingTrackIdx = -1;
 }
 
 void TimelineComponent::startTrackRename (te::Track* track, int ty)
@@ -773,8 +932,9 @@ void TimelineComponent::startClipRename (te::Clip* clip)
                                              - clip->getPosition().getStart().inSeconds())
                                             * pixelsPerSecond);
 
-    // Find which track row this clip is on.
-    int trackY = rulerH;
+    // Find which track index this clip is on.
+    int foundTrackIdx = 0;
+    int tIdx = 0;
     if (auto* edit = engine.getCurrentEdit())
     {
         edit->getTrackList().visitAllTopLevel ([&] (te::Track& t) -> bool
@@ -786,12 +946,18 @@ void TimelineComponent::startClipRename (te::Clip* clip)
                 const int n = ct->getNumTrackItems();
                 for (int i = 0; i < n; ++i)
                     if (dynamic_cast<te::Clip*> (ct->getTrackItem (i)) == clip)
-                        return false;   // found — stop, trackY is current
+                    {
+                        foundTrackIdx = tIdx;
+                        return false;
+                    }
             }
-            trackY += trackH;
+            ++tIdx;
             return true;
         });
     }
+
+    const int trackY = getTrackY (foundTrackIdx);
+    const int tH     = getTrackH (foundTrackIdx);
 
     clipRenameEditor = std::make_unique<juce::TextEditor>();
     clipRenameEditor->setText (clip->getName(), false);
@@ -803,7 +969,7 @@ void TimelineComponent::startClipRename (te::Clip* clip)
 
     const int edX = juce::jmax ((int) trackHeaderW, (int) clipX + 2);
     const int edW = juce::jmin ((int) clipW - 4, 180);
-    clipRenameEditor->setBounds (edX, trackY + trackH - 24, juce::jmax (60, edW), 20);
+    clipRenameEditor->setBounds (edX, trackY + tH - 24, juce::jmax (60, edW), 20);
 
     clipRenameEditor->onReturnKey = [this] { commitClipRename(); };
     clipRenameEditor->onEscapeKey = [this] { clipRenameEditor.reset(); clipBeingRenamed = nullptr; repaint(); };
@@ -826,6 +992,14 @@ void TimelineComponent::commitClipRename()
 
 void TimelineComponent::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    // Double-click on ruler → add marker
+    if (e.y < rulerH && e.x > trackHeaderW)
+    {
+        const double posSec = xToSeconds ((float) e.x);
+        engine.addMarker ("Marker " + juce::String (engine.getMarkers().size() + 1), posSec);
+        return;
+    }
+
     if (e.x < trackHeaderW || e.y < rulerH) return;
 
     auto* clip = clipAtPoint (e.x, e.y);
@@ -982,14 +1156,22 @@ void TimelineComponent::rebuildTrackControls()
     }
     trackControls.clear();
 
+    // Preserve existing heights across rebuild.
+    const auto oldHeights = trackHeights;
+    trackHeights.clear();
+
     auto* edit = engine.getCurrentEdit();
     if (! edit) { repaint(); return; }
 
-    edit->getTrackList().visitAllTopLevel ([this] (te::Track& t) -> bool
+    edit->getTrackList().visitAllTopLevel ([this, &oldHeights] (te::Track& t) -> bool
     {
         if (! t.isAudioTrack()) return true;
         auto* at = dynamic_cast<te::AudioTrack*> (&t);
         if (! at) return true;
+
+        // Preserve previous height for this track index, or use default.
+        const int idx = static_cast<int> (trackHeights.size());
+        trackHeights.push_back (idx < (int) oldHeights.size() ? oldHeights[(size_t) idx] : defaultTrackH);
 
         auto tc = std::make_unique<TrackControls>();
         tc->track = at;
@@ -1052,15 +1234,17 @@ void TimelineComponent::layoutTrackControls()
 {
     for (int i = 0; i < (int) trackControls.size(); ++i)
     {
-        auto& tc    = *trackControls[(size_t) i];
-        const int y = rulerH + i * trackH;
+        auto& tc  = *trackControls[(size_t) i];
+        const int y = getTrackY (i);
+        const int h = getTrackH (i);
 
         // Mute (M) and Solo (S) buttons: top-right corner, side by side.
         tc.muteBtn->setBounds (trackHeaderW - 54, y + 6, 24, 18);
         tc.soloBtn->setBounds (trackHeaderW - 28, y + 6, 24, 18);
 
-        // Volume slider: lower portion of header.
-        tc.volSlider->setBounds (6, y + 44, trackHeaderW - 14, 18);
+        // Volume slider: lower portion of header (above the resize handle).
+        const int sliderY = y + h - 22;
+        tc.volSlider->setBounds (6, sliderY, trackHeaderW - 14, 16);
     }
 }
 

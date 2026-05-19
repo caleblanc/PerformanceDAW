@@ -40,9 +40,15 @@ private:
     double pixelsPerSecond  = 120.0;
     double viewStartSeconds = 0.0;
 
-    static constexpr int trackHeaderW = 160;
-    static constexpr int rulerH       = 28;
-    static constexpr int trackH       = 72;
+    static constexpr int trackHeaderW  = 160;
+    static constexpr int rulerH        = 28;
+    static constexpr int defaultTrackH = 72;
+    static constexpr int minTrackH     = 36;
+
+    // Per-track heights (variable; one entry per audio track in order).
+    std::vector<int> trackHeights;
+    int  getTrackY (int idx) const;   // pixel Y of top of track
+    int  getTrackH (int idx) const;   // height of track
 
     // Persistent thumbnail management.
     // AudioFormatManager pointer is borrowed from the TE engine — no ownership.
@@ -94,10 +100,17 @@ private:
     void   paintGrid (juce::Graphics& g, juce::Rectangle<int> clipArea);
 
     // ── Clip drag state ───────────────────────────────────────────────────────
-    enum class DragMode { None, Move, ResizeLeft, ResizeRight };
+    enum class DragMode { None, Move, ResizeLeft, ResizeRight, GainHandle };
     DragMode   clipDragMode  = DragMode::None;
     te::Clip*  dragClip      = nullptr;
     double     dragOffsetSec = 0.0;   // cursor distance from clip start at drag begin
+    float      gainDragStartDb = 0.f; // gain at drag start (for GainHandle mode)
+    int        gainDragStartY  = 0;
+
+    // ── Track resize state ────────────────────────────────────────────────────
+    int resizingTrackIdx  = -1;
+    int resizeDragStartY  = 0;
+    int resizeDragStartH  = 0;
 
     // ── Per-track header controls ─────────────────────────────────────────────
     struct TrackControls
@@ -112,12 +125,16 @@ private:
     void layoutTrackControls();
     void syncTrackControls();   // keep sliders in step with engine (called from timer)
 
+    // ── Marker painting ───────────────────────────────────────────────────────
+    void paintMarkers (juce::Graphics& g, juce::Rectangle<int> rulerArea);
+
     // ── Timer / Listener ──────────────────────────────────────────────────────
     void timerCallback         ()             override;
     void activeSongChanged     (int)          override;
     void trackListChanged      ()             override;
     void trackSelectionChanged (te::Track*)   override { repaint(); }
     void clipSelectionChanged  (te::Clip*)    override { repaint(); }
+    void markersChanged        ()             override { repaint(); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TimelineComponent)
 };

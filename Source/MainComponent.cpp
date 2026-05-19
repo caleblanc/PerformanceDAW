@@ -85,6 +85,13 @@ bool MainComponent::keyPressed (const juce::KeyPress& k, juce::Component*)
         return true;
     }
 
+    if (code == 'M' && ! cmd)
+    {
+        const double pos = playbackEngine.getCurrentPositionSeconds();
+        playbackEngine.addMarker ("Marker " + juce::String (playbackEngine.getMarkers().size() + 1), pos);
+        return true;
+    }
+
     // ── Setlist navigation (Page Up / Page Down) ──────────────────────────
     if (code == juce::KeyPress::pageUpKey)
     {

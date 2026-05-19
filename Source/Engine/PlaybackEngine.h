@@ -17,7 +17,16 @@ public:
         virtual void trackListChanged      () {}
         virtual void trackSelectionChanged (te::Track* newSelection) {}
         virtual void clipSelectionChanged  (te::Clip*  newSelection) {}
+        virtual void markersChanged        () {}
     };
+
+    // ── Markers ───────────────────────────────────────────────────────────────
+    struct Marker { juce::String name; double positionSeconds; };
+
+    void                       addMarker    (const juce::String& name, double positionSeconds);
+    void                       removeMarker (int index);
+    void                       renameMarker (int index, const juce::String& newName);
+    const std::vector<Marker>& getMarkers   () const { return markers; }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     PlaybackEngine();
@@ -98,6 +107,7 @@ private:
     te::Clip*                   selectedClip  = nullptr;
 
     bool autoAdvance = false;
+    std::vector<Marker> markers;
 
     juce::ListenerList<Listener> listeners;
 

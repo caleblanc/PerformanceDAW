@@ -232,6 +232,31 @@ bool PlaybackEngine::loadSongFromFile (const juce::File& file)
     return true;
 }
 
+// ── Markers ───────────────────────────────────────────────────────────────────
+
+void PlaybackEngine::addMarker (const juce::String& name, double positionSeconds)
+{
+    markers.push_back ({ name, positionSeconds });
+    // Keep sorted by position.
+    std::sort (markers.begin(), markers.end(),
+               [] (const Marker& a, const Marker& b) { return a.positionSeconds < b.positionSeconds; });
+    listeners.call ([] (Listener& l) { l.markersChanged(); });
+}
+
+void PlaybackEngine::removeMarker (int index)
+{
+    if (index < 0 || index >= static_cast<int> (markers.size())) return;
+    markers.erase (markers.begin() + index);
+    listeners.call ([] (Listener& l) { l.markersChanged(); });
+}
+
+void PlaybackEngine::renameMarker (int index, const juce::String& newName)
+{
+    if (index < 0 || index >= static_cast<int> (markers.size())) return;
+    markers[index].name = newName;
+    listeners.call ([] (Listener& l) { l.markersChanged(); });
+}
+
 void PlaybackEngine::setTrackOutputDevice (te::AudioTrack* track, const juce::String& deviceID)
 {
     if (! track) return;
