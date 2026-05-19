@@ -1,0 +1,18 @@
+# Build output
+build/
+cmake-build-*/
+*.xcodeproj/
+*.xcworkspace/
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# JUCE temporary files
+JuceLibraryCode/
